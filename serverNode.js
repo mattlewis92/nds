@@ -2,6 +2,9 @@ var port = parseInt(process.argv[2]);
 var io = require('socket.io').listen(port, { log: false });
 var find = require('findit');
 
+var Hashids = require('hashids'),
+    hashids = new Hashids('networks and distributed systems', 20, '0123456789abcdefghijklmnopqrstuvwxyz');
+
 var env = process.env.NDS_ENV || 'development';
 var config = require('./config/' + env);
 
@@ -16,6 +19,23 @@ if (fs.existsSync(dbPath)) {
 fs.mkdirSync(dbPath);
 
 console.log('Server listening on', port);
+
+var hashWord = function(word) {
+    var characterIds = [];
+    for(var i = 0; i < word.length; i++) {
+        characterIds.push(word.charCodeAt(i));
+    }
+    return hashids.encrypt(characterIds);
+}
+
+var dehashWord = function(hash) {
+    var numbers = hashids.decrypt(hash);
+    var word = '';
+    numbers.forEach(function(number) {
+        word += String.fromCharCode(number);
+    });
+    return word;
+}
 
 io.sockets.on('connection', function (socket) {
 
@@ -33,10 +53,9 @@ io.sockets.on('connection', function (socket) {
                 console.log('ERROR creating index folder', err);
             } else {
 
-                fs.open(indexPath + '/' + data.word, 'w', function(err, fd) {
+                fs.open(indexPath + '/' + hashWord(data.word), 'w', function(err, fd) {
                     if (err) console.log('ERROR SAVING FILE', err);
                     fs.close(fd);
-                    fn('saved');
                 });
 
             }
@@ -45,6 +64,16 @@ io.sockets.on('connection', function (socket) {
     });
 
     socket.on('removeDuplicates', function(data, fn) {
+
+        var deleteIfExists = function(indexPath, word) {
+            fs.exists(indexPath + word, function (exists) {
+
+                if (exists) {
+                    fs.rmrf(indexPath, function (err) {});
+                }
+
+            });
+        }
 
         if (highestIndex > -1) {
             var finder = find(dbPath);
@@ -57,17 +86,7 @@ io.sockets.on('connection', function (socket) {
                 var i = (index + 1);
 
                 while(i <= highestIndex) {
-
-                    var indexPath = dbPath + '/' + i + '/';
-
-                    fs.exists(indexPath + word, function (exists) {
-
-                        if (exists) {
-                            fs.rmrf(indexPath, function (err) {});
-                        }
-
-                    });
-
+                    deleteIfExists(dbPath + '/' + i + '/', word);
                     i++;
                 }
 
@@ -89,7 +108,7 @@ io.sockets.on('connection', function (socket) {
             if (err || files.length == 0) {
                 fn(null);
             } else {
-                var word = files[0].split('/').pop();
+                var word = dehashWord(files[0].split('/').pop());
                 fs.rmrf(dbPath + '/' + index, function(err) {});
                 fn(word);
             }
