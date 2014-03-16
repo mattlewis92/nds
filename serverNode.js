@@ -21,12 +21,9 @@ io.sockets.on('connection', function (socket) {
 
     console.log('Connection received');
 
-    var lowestIndex = null;
     var highestIndex = -1;
 
     socket.on('storeWord', function (data, fn) {
-
-        if (lowestIndex === null) lowestIndex = data.index;
 
         if (data.index > highestIndex) highestIndex = data.index;
 
@@ -37,6 +34,7 @@ io.sockets.on('connection', function (socket) {
             } else {
 
                 fs.open(indexPath + '/' + data.word, 'w', function(err, fd) {
+                    if (err) console.log('ERROR SAVING FILE', err);
                     fs.close(fd);
                     fn('saved');
                 });
@@ -48,7 +46,7 @@ io.sockets.on('connection', function (socket) {
 
     socket.on('removeDuplicates', function(data, fn) {
 
-        if (lowestIndex !== null) {
+        if (highestIndex > -1) {
             var finder = find(dbPath);
 
             finder.on('file', function (file, stat) {
@@ -76,12 +74,26 @@ io.sockets.on('connection', function (socket) {
             });
 
             finder.on('end', function() {
-                fn(lowestIndex);
+                fn();
             });
 
         } else {
-            fn(lowestIndex);
+            fn();
         }
+
+    });
+
+    socket.on('retrieveWord', function(index, fn) {
+
+        fs.readdir(dbPath + '/' + index, function(err, files) {
+            if (err || files.length == 0) {
+                fn(null);
+            } else {
+                var word = files[0].split('/').pop();
+                fs.rmrf(dbPath + '/' + index, function(err) {});
+                fn(word);
+            }
+        });
 
     });
 

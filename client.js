@@ -8,6 +8,24 @@ var config = require('./config/' + env);
 
 var sockets = [];
 
+var count = 0;
+
+function hook_stdout() {
+    var old_write = process.stdout.write;
+
+    process.stdout.write = (function(write) {
+        return function(string, encoding, fd) {
+            //write.apply(process.stdout, arguments);
+        }
+    })(process.stdout.write);
+
+    return function() {
+        process.stdout.write = old_write;
+    }
+}
+
+var unhook = hook_stdout();
+
 async.forEach(config.hosts, function(host, callback) {
 
     var socket = io.connect(host);
@@ -34,22 +52,21 @@ async.forEach(config.hosts, function(host, callback) {
         output: process.stdout
     });
 
-    var count = 0;
-
     var getSocketToSaveWordTo = function(input) {
-        var firstChar = input.charCodeAt(0) - 97;
+        var firstChar = input.toLowerCase().charCodeAt(0) - 97;
         var socketIndex = firstChar % sockets.length;
         return sockets[socketIndex];
     }
 
     rl.on('line', function (word) {
+
         if (word.length == 0) { //end of input
             rl.close();
             emitRemoveDupes();
         } else {
             var socket = getSocketToSaveWordTo(word);
             socket.emit('storeWord', {word: word, index: count}, function (data) {
-                console.log(data);
+                //console.log(data);
             });
             count++;
         }
@@ -58,10 +75,34 @@ async.forEach(config.hosts, function(host, callback) {
 });
 
 var emitRemoveDupes = function() {
-    sockets.forEach(function(socket) {
-        socket.emit('removeDuplicates', null, function(data) {
-            console.log('Lowest id', data);
-            process.exit();
+
+    async.forEach(sockets, function(socket, callback) {
+        socket.emit('removeDuplicates', null, function() {
+            callback();
         });
+    }, function(err) {
+        console.log('\n--RESULT--\n');
+        unhook();
+        retrieveWord(0);
+    });
+}
+
+var retrieveWord = function(index) {
+    async.forEach(sockets, function(socket, callback) {
+
+        socket.emit('retrieveWord', index, function(word) {
+            if (word) console.log(word);
+            callback();
+        });
+
+    }, function(err) {
+
+        if (index < count) {
+            retrieveWord(index + 1);
+        } else {
+            //console.log('FINISHED');
+            process.exit();
+        }
+
     });
 }
