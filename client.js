@@ -1,10 +1,9 @@
 var io = require('socket.io-client');
 var async = require('async');
 var readline = require('readline');
+var fs = require('fs');
 
-
-var env = process.env.NDS_ENV || 'development';
-var config = require('./config/' + env);
+var hosts = fs.readFileSync('hosts.cfg').toString().split('\n');
 
 var sockets = [];
 
@@ -24,9 +23,10 @@ function hook_stdout() {
     }
 }
 
-var unhook = hook_stdout();
+//var unhook = hook_stdout();
+var unhook = function(){};
 
-async.forEach(config.hosts, function(host, callback) {
+async.forEach(hosts, function(host, callback) {
 
     var socket = io.connect(host);
     var called = false;
@@ -58,15 +58,21 @@ async.forEach(config.hosts, function(host, callback) {
         return sockets[socketIndex];
     }
 
+    var stillToSave = 0;
+	var isComplete = false;
+
     rl.on('line', function (word) {
 
         if (word.length == 0) { //end of input
             rl.close();
-            emitRemoveDupes();
+			isComplete = true;
+			if (stillToSave == 0) emitRemoveDupes();
         } else {
             var socket = getSocketToSaveWordTo(word);
+			stillToSave++;
             socket.emit('storeWord', {word: word, index: count}, function (data) {
-                //console.log(data);
+				stillToSave--;
+                if (isComplete && stillToSave == 0) emitRemoveDupes();
             });
             count++;
         }
@@ -74,7 +80,12 @@ async.forEach(config.hosts, function(host, callback) {
 
 });
 
+
+var hasStartedRemovingDupes = false;
 var emitRemoveDupes = function() {
+	
+	if (hasStartedRemovingDupes) return;
+	hasStartedRemovingDupes = true;
 
     async.forEach(sockets, function(socket, callback) {
         socket.emit('removeDuplicates', null, function() {

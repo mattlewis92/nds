@@ -5,12 +5,9 @@ var find = require('findit');
 var Hashids = require('hashids'),
     hashids = new Hashids('networks and distributed systems', 20, '0123456789abcdefghijklmnopqrstuvwxyz');
 
-var env = process.env.NDS_ENV || 'development';
-var config = require('./config/' + env);
-
 var fs = require('fs.extra');
 
-var dbPath = config.dbBaseDir + '/' + port;
+var dbPath = './data/' + port;
 
 if (fs.existsSync(dbPath)) {
     fs.rmrfSync(dbPath);
@@ -47,17 +44,16 @@ io.sockets.on('connection', function (socket) {
 
         if (data.index > highestIndex) highestIndex = data.index;
 
-        var indexPath = dbPath + '/' + data.index;
-        fs.mkdir(indexPath, function(err) {
+        var indexPath = (data.index + '').split('').join('/');
+
+		console.log('STORING', data.index, data.word);
+
+        var wordPath = dbPath + '/index/' + indexPath + '/word/' + hashWord(data.word);
+        fs.mkdirp(wordPath, function(err) {
             if (err) {
-                console.log('ERROR creating index folder', err);
+                console.log('ERROR creating word', err);
             } else {
-
-                fs.open(indexPath + '/' + hashWord(data.word), 'w', function(err, fd) {
-                    if (err) console.log('ERROR SAVING FILE', err);
-                    fs.close(fd);
-                });
-
+                fn('saved');
             }
         });
 
@@ -66,7 +62,8 @@ io.sockets.on('connection', function (socket) {
     socket.on('removeDuplicates', function(data, fn) {
 
         var deleteIfExists = function(indexPath, word) {
-            fs.exists(indexPath + word, function (exists) {
+            console.log('DELETE IF EXISTS', indexPath, word);
+            fs.exists(indexPath + 'word/' + word, function (exists) {
 
                 if (exists) {
                     fs.rmrf(indexPath, function (err) {});
@@ -78,16 +75,20 @@ io.sockets.on('connection', function (socket) {
         if (highestIndex > -1) {
             var finder = find(dbPath);
 
-            finder.on('file', function (file, stat) {
-                var fileParts = file.replace(dbPath + '/', '').split('/');
-                var index = parseInt(fileParts[0]);
-                var word = fileParts[1];
+            finder.on('directory', function (dir, stat, stop) {
 
-                var i = (index + 1);
+                if (dir.indexOf('/word/') > -1) { //bottom level directory
+                    var fileParts = dir.split('/');
+                    var word = fileParts.pop();
 
-                while(i <= highestIndex) {
-                    deleteIfExists(dbPath + '/' + i + '/', word);
-                    i++;
+                    var index = parseInt(dir.match(/\/index\/([\/\d]+)\//)[1].replace(/\//g, ''));
+
+                    var i = (index + 1);
+
+                    while(i <= highestIndex) {
+                        deleteIfExists(dbPath + '/index/' + (i + '').split('').join('/') + '/', word);
+                        i++;
+                    }
                 }
 
             });
@@ -104,12 +105,12 @@ io.sockets.on('connection', function (socket) {
 
     socket.on('retrieveWord', function(index, fn) {
 
-        fs.readdir(dbPath + '/' + index, function(err, files) {
+        fs.readdir(dbPath + '/index/' + (index + '').split('').join('/') + '/word', function(err, files) {
             if (err || files.length == 0) {
                 fn(null);
             } else {
                 var word = dehashWord(files[0].split('/').pop());
-                fs.rmrf(dbPath + '/' + index, function(err) {});
+                //fs.rmrf(dbPath + '/' + index, function(err) {});
                 fn(word);
             }
         });
