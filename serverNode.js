@@ -64,7 +64,7 @@ server.registerCommand('removeDuplicates', function(data, callback) {
             var word = obj[key];
             if (!build[word]) {
                 build[word] = key;
-            } else if(build[word] > key) {
+            } else if(parseInt(build[word]) > parseInt(key)) {
                 build[word] = key;
             }
         });

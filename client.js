@@ -11,7 +11,7 @@ var sockets = [];
 
 var count = 0;
 
-const CHUNK_SIZE = 200;
+const CHUNK_SIZE = 30;
 
 var start = moment();
 
@@ -24,7 +24,7 @@ async.forEach(hosts, function(host, callback) {
 
 }, function(err) {
 
-    console.log('All hosts connected');
+    //console.log('All hosts connected');
 
     var rl = readline.createInterface({
         input: process.stdin,
@@ -62,7 +62,7 @@ async.forEach(hosts, function(host, callback) {
     rl.on('line', function (word) {
 
         if (word.length == 0) { //end of input
-            console.log('END OF INPUT');
+            //console.log('END OF INPUT');
             rl.close();
             var completed = 0;
 			sockets.forEach(function(socket, index) {
@@ -94,15 +94,15 @@ var emitRemoveDupes = function() {
 
     var transmissionEnd = moment();
     var diff = transmissionEnd - start;
-    console.log('TOOK', moment(diff).format('mm:ss'));
-    process.exit();
+    //console.log('TOOK', moment(diff).format('mm:ss'));
+    //process.exit();
 
     async.forEach(sockets, function(socket, callback) {
         socket.executeCommand('removeDuplicates', null, function() {
             callback();
         });
     }, function(err) {
-        console.log('\n--RESULT--\n');
+        //console.log('\n--RESULT--\n');
         retrieveWords(0);
     });
 }
@@ -135,7 +135,7 @@ var retrieveWords = function(previousLimit) {
             retrieveWords(indexLessThanOrEqualTo);
         } else {
             var diff = moment() - start;
-            console.log('FINISHED', moment(diff).format('mm:ss'));
+            //console.log('FINISHED', moment(diff).format('mm:ss'));
             process.exit();
         }
 
