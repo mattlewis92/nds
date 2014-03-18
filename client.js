@@ -1,9 +1,9 @@
-var io = require('socket.io-client');
 var async = require('async');
 var readline = require('readline');
 var fs = require('fs');
 var extend = require('util')._extend;
 var moment = require('moment');
+var client = require('./lib/client');
 
 var hosts = fs.readFileSync('hosts.cfg').toString().split('\n');
 
@@ -11,24 +11,14 @@ var sockets = [];
 
 var count = 0;
 
-const CHUNK_SIZE = 20;
+const CHUNK_SIZE = 200;
 
 var start = moment();
 
 async.forEach(hosts, function(host, callback) {
 
-    var socket = io.connect(host);
-    var called = false;
-
-    socket.on('connect', function() {
-
-        socket.on('disconnect', function() {
-            console.log('HOST ' + host + ' DISCONNECTED');
-        });
-
-        if (!called) callback();
-        called = true;
-    });
+    var hostParts = host.split(':');
+    var socket = new client(hostParts[0], hostParts[1], callback);
 
     sockets.push(socket);
 
@@ -64,7 +54,7 @@ async.forEach(hosts, function(host, callback) {
                 }
             }
 
-            sockets[index].emit('storeWords', dataToSend, callback);
+            sockets[index].executeCommand('storeWords', dataToSend, callback);
         }
 
     }
@@ -72,6 +62,7 @@ async.forEach(hosts, function(host, callback) {
     rl.on('line', function (word) {
 
         if (word.length == 0) { //end of input
+            console.log('END OF INPUT');
             rl.close();
             var completed = 0;
 			sockets.forEach(function(socket, index) {
@@ -103,11 +94,11 @@ var emitRemoveDupes = function() {
 
     var transmissionEnd = moment();
     var diff = transmissionEnd - start;
-    //console.log('TOOK', moment(diff).format('mm:ss'));
-    //process.exit();
+    console.log('TOOK', moment(diff).format('mm:ss'));
+    process.exit();
 
     async.forEach(sockets, function(socket, callback) {
-        socket.emit('removeDuplicates', null, function() {
+        socket.executeCommand('removeDuplicates', null, function() {
             callback();
         });
     }, function(err) {
@@ -124,7 +115,7 @@ var retrieveWords = function(previousLimit) {
 
     async.forEach(sockets, function(socket, callback) {
 
-        socket.emit('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: previousLimit}, function(words) {
+        socket.executeCommand('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: previousLimit}, function(words) {
             build.push(words);
             callback();
         });
