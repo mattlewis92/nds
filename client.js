@@ -2,6 +2,8 @@ var io = require('socket.io-client');
 var async = require('async');
 var readline = require('readline');
 var fs = require('fs');
+var extend = require('util')._extend;
+var moment = require('moment');
 
 var hosts = fs.readFileSync('hosts.cfg').toString().split('\n');
 
@@ -9,22 +11,9 @@ var sockets = [];
 
 var count = 0;
 
-function hook_stdout() {
-    var old_write = process.stdout.write;
+const CHUNK_SIZE = 20;
 
-    process.stdout.write = (function(write) {
-        return function(string, encoding, fd) {
-            //write.apply(process.stdout, arguments);
-        }
-    })(process.stdout.write);
-
-    return function() {
-        process.stdout.write = old_write;
-    }
-}
-
-//var unhook = hook_stdout();
-var unhook = function(){};
+var start = moment();
 
 async.forEach(hosts, function(host, callback) {
 
@@ -49,31 +38,56 @@ async.forEach(hosts, function(host, callback) {
 
     var rl = readline.createInterface({
         input: process.stdin,
-        output: process.stdout
+        output: new require('stream').Writable()
     });
 
-    var getSocketToSaveWordTo = function(input) {
+    var getSocketIndexToSaveWordTo = function(input) {
         var firstChar = input.toLowerCase().charCodeAt(0) - 97;
         var socketIndex = firstChar % sockets.length;
-        return sockets[socketIndex];
+        return socketIndex;
     }
 
-    var stillToSave = 0;
-	var isComplete = false;
+    var chunks = new Array(sockets.length);
+
+    var chunkHandler = function(index, endOfInput) {
+
+        endOfInput = endOfInput || false;
+
+        if (Object.keys(chunks[index]).length >= CHUNK_SIZE || endOfInput) {
+            var dataToSend = extend({}, chunks[index]);
+            chunks[index] = {};
+
+            var callback = null;
+            if (endOfInput) {
+                callback = function (data) {
+                    endOfInput(data);
+                }
+            }
+
+            sockets[index].emit('storeWords', dataToSend, callback);
+        }
+
+    }
 
     rl.on('line', function (word) {
 
         if (word.length == 0) { //end of input
             rl.close();
-			isComplete = true;
-			if (stillToSave == 0) emitRemoveDupes();
-        } else {
-            var socket = getSocketToSaveWordTo(word);
-			stillToSave++;
-            socket.emit('storeWord', {word: word, index: count}, function (data) {
-				stillToSave--;
-                if (isComplete && stillToSave == 0) emitRemoveDupes();
+            var completed = 0;
+			sockets.forEach(function(socket, index) {
+                chunkHandler(index, function() {
+                    completed++;
+                    if (completed == sockets.length) {
+                        emitRemoveDupes();
+                    }
+                });
             });
+        } else {
+            var socketIndex = getSocketIndexToSaveWordTo(word);
+            chunks[socketIndex] = chunks[socketIndex] || {};
+            chunks[socketIndex][count] = word;
+
+            chunkHandler(socketIndex);
             count++;
         }
     });
@@ -87,33 +101,53 @@ var emitRemoveDupes = function() {
 	if (hasStartedRemovingDupes) return;
 	hasStartedRemovingDupes = true;
 
+    var transmissionEnd = moment();
+    var diff = transmissionEnd - start;
+    //console.log('TOOK', moment(diff).format('mm:ss'));
+    //process.exit();
+
     async.forEach(sockets, function(socket, callback) {
         socket.emit('removeDuplicates', null, function() {
             callback();
         });
     }, function(err) {
         console.log('\n--RESULT--\n');
-        unhook();
-        retrieveWord(0);
+        retrieveWords(0);
     });
 }
 
-var retrieveWord = function(index) {
+var retrieveWords = function(previousLimit) {
+
+    var indexLessThanOrEqualTo = previousLimit + (CHUNK_SIZE * sockets.length);
+
+    var build = [];
+
     async.forEach(sockets, function(socket, callback) {
 
-        socket.emit('retrieveWord', index, function(word) {
-            if (word) console.log(word);
+        socket.emit('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: previousLimit}, function(words) {
+            build.push(words);
             callback();
         });
 
     }, function(err) {
 
-        if (index < count) {
-            retrieveWord(index + 1);
+        var objectsMerged = {};
+        build.forEach(function(items) {
+            objectsMerged = extend(objectsMerged, items);
+        });
+
+        for (var i = previousLimit; i <= indexLessThanOrEqualTo; i++) {
+            if (objectsMerged[i]) console.log(objectsMerged[i]);
+        }
+
+        if (indexLessThanOrEqualTo < count) {
+            retrieveWords(indexLessThanOrEqualTo);
         } else {
-            //console.log('FINISHED');
+            var diff = moment() - start;
+            console.log('FINISHED', moment(diff).format('mm:ss'));
             process.exit();
         }
 
     });
+
 }

@@ -1,11 +1,8 @@
 var port = parseInt(process.argv[2]);
 var io = require('socket.io').listen(port, { log: false });
-var find = require('findit');
-
-var Hashids = require('hashids'),
-    hashids = new Hashids('networks and distributed systems', 20, '0123456789abcdefghijklmnopqrstuvwxyz');
-
+var os = require('os');
 var fs = require('fs.extra');
+var extend = require('util')._extend;
 
 var dbPath = './data/' + port;
 
@@ -17,103 +14,102 @@ fs.mkdirSync(dbPath);
 
 console.log('Server listening on', port);
 
-var hashWord = function(word) {
-    var characterIds = [];
-    for(var i = 0; i < word.length; i++) {
-        characterIds.push(word.charCodeAt(i));
-    }
-    return hashids.encrypt(characterIds);
-}
+var allowedMemorySize = os.totalmem() / 8;
+//allowedMemorySize = 1000;
 
-var dehashWord = function(hash) {
-    var numbers = hashids.decrypt(hash);
-    var word = '';
-    numbers.forEach(function(number) {
-        word += String.fromCharCode(number);
-    });
-    return word;
-}
+var memoryUsageGuess = 0;
 
 io.sockets.on('connection', function (socket) {
 
     console.log('Connection received');
 
-    var highestIndex = -1;
+    var words = {};
 
-    socket.on('storeWord', function (data, fn) {
+    var filesWritten = 0;
 
-        if (data.index > highestIndex) highestIndex = data.index;
+    var checkMemoryUsage = function() {
+        if (memoryUsageGuess > allowedMemorySize) {
+            memoryUsageGuess = 0;
+            var wordsBackup = extend({}, words);
+            words = {};
+            filesWritten++;
 
-        var indexPath = (data.index + '').split('').join('/');
+            fs.writeFile(dbPath + '/words' + filesWritten, 'module.exports=' + JSON.stringify(wordsBackup) + ';', function(err) {
+                if(err) {
+                    console.log(err);
+                } else {
+                    console.log("The file was saved!");
+                }
+            });
 
-		console.log('STORING', data.index, data.word);
+        }
+    }
 
-        var wordPath = dbPath + '/index/' + indexPath + '/word/' + hashWord(data.word);
-        fs.mkdirp(wordPath, function(err) {
-            if (err) {
-                console.log('ERROR creating word', err);
-            } else {
-                fn('saved');
-            }
-        });
+    socket.on('storeWords', function (chunkOfWords, fn) {
+
+        //console.log('STORING', Object.keys(chunkOfWords).length);
+
+        words = extend(words, chunkOfWords);
+
+        for (var i in chunkOfWords) {
+            memoryUsageGuess += (i + chunkOfWords[i]).length;
+        }
+
+        checkMemoryUsage();
+
+        if (fn) fn('saved');
 
     });
+
+    var result = {};
 
     socket.on('removeDuplicates', function(data, fn) {
 
-        var deleteIfExists = function(indexPath, word) {
-            console.log('DELETE IF EXISTS', indexPath, word);
-            fs.exists(indexPath + 'word/' + word, function (exists) {
-
-                if (exists) {
-                    fs.rmrf(indexPath, function (err) {});
+        var mapReduceFn = function(obj) {
+            var keys = Object.keys(obj);
+            var build = {};
+            keys.forEach(function(key) {
+                var word = obj[key];
+                if (!build[word]) {
+                    build[word] = key;
+                } else if(build[word] > key) {
+                    build[word] = key;
                 }
-
             });
+
+            var keys = Object.keys(build);
+            var result = {};
+            keys.forEach(function(key) {
+                result[build[key]] = key;
+            });
+
+            return result;
         }
 
-        if (highestIndex > -1) {
-            var finder = find(dbPath);
+        if (filesWritten == 0) {
 
-            finder.on('directory', function (dir, stat, stop) {
-
-                if (dir.indexOf('/word/') > -1) { //bottom level directory
-                    var fileParts = dir.split('/');
-                    var word = fileParts.pop();
-
-                    var index = parseInt(dir.match(/\/index\/([\/\d]+)\//)[1].replace(/\//g, ''));
-
-                    var i = (index + 1);
-
-                    while(i <= highestIndex) {
-                        deleteIfExists(dbPath + '/index/' + (i + '').split('').join('/') + '/', word);
-                        i++;
-                    }
-                }
-
-            });
-
-            finder.on('end', function() {
-                fn();
-            });
+            result = mapReduceFn(words);
+            words = null;
+            fn();
 
         } else {
-            fn();
+
         }
 
     });
 
-    socket.on('retrieveWord', function(index, fn) {
+    socket.on('retrieveWords', function(data, fn) {
 
-        fs.readdir(dbPath + '/index/' + (index + '').split('').join('/') + '/word', function(err, files) {
-            if (err || files.length == 0) {
-                fn(null);
-            } else {
-                var word = dehashWord(files[0].split('/').pop());
-                //fs.rmrf(dbPath + '/' + index, function(err) {});
-                fn(word);
+        var response = {};
+
+        for(var i = data.indexGreaterThanOrEqualTo; i <= data.indexLessThanOrEqualTo; i++) {
+            if (result[i]) {
+                response[i] = result[i];
+                delete result[i];
             }
-        });
+        }
+
+        fn(response);
 
     });
 
