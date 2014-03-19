@@ -1,5 +1,6 @@
 var port = parseInt(process.argv[2]);
 var os = require('os');
+var async = require('async');
 var fs = require('fs.extra');
 var extend = require('util')._extend;
 var server = require('./lib/server')('127.0.0.1', port);
@@ -91,16 +92,52 @@ server.registerCommand('removeDuplicates', function(data, callback) {
 });
 
 server.registerCommand('retrieveWords', function(data, callback) {
-    var response = {};
 
-    for(var i = data.indexGreaterThanOrEqualTo; i <= data.indexLessThanOrEqualTo; i++) {
-        if (result[i]) {
-            response[i] = result[i];
-            delete result[i];
+    var chunkSize = data.chunkSize;
+    var maxId = Object.keys(result).pop();
+
+    var chunks = new Array(Math.ceil(maxId / chunkSize));
+    var chunksAdded = 0;
+    var buildChunk = {};
+    for (var i in result) {
+
+        var bottomThreshold = chunksAdded * chunkSize;
+        var topThreshold = bottomThreshold + chunkSize;
+
+        while (parseInt(i) >= topThreshold) {
+            chunks[chunksAdded] = extend({}, buildChunk);
+            buildChunk = {};
+            chunksAdded++;
+
+            bottomThreshold = chunksAdded * chunkSize;
+            topThreshold = bottomThreshold + chunkSize;
         }
-    }
 
-    callback(response);
+        buildChunk[i] = result[i];
+    }
+    chunks[chunksAdded] = buildChunk;
+    chunks.reverse();
+
+    if (chunks[chunks.length - 1] == null) chunks.pop();
+
+    result = null;
+
+    var sendChunk = function() {
+
+        var response = chunks.pop();
+
+        if (chunks.length > 0) {
+            server.writeToStream(response, sendChunk);
+        } else {
+            server.writeToStream(response);
+            server.writeToStream({endOfData: true});
+        }
+
+        response = null;
+
+    };
+
+    sendChunk();
 });
 
 server.registerCommand('cleanup', function(data, callback) {

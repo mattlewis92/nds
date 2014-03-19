@@ -104,54 +104,69 @@ var emitRemoveDupes = function() {
     }, function(err) {
         //console.log('\n--RESULT--\n');
 
-        retrieveWords(0);
+        retrieveWords();
     });
 }
 
-/*var retrieveWords = function() {
+var retrieveWords = function() {
 
-    var step = (CHUNK_SIZE * sockets.length);
+    var socketsEnded = 0;
 
-    var thresholds = [];
+    var buildHelper = {};
 
-    for (var j = 0; j < count ; j+= step) {
-        thresholds.push(j);
-    }
+    sockets.forEach(function(socket) {
 
-    async.eachLimit(thresholds, 100, function(indexGreaterThanOrEqualTo, callback) {
-        var build = [];
+        var count = 0;
 
-        var indexLessThanOrEqualTo = indexGreaterThanOrEqualTo + step;
+        socket.executeCommand('retrieveWords', {chunkSize: 2});
+        socket.streamResponse(function(data) {
+            count++;
+            if (data.endOfData) {
+                socketsEnded++;
 
-        async.each(sockets, function(socket, callback) {
+                if (socketsEnded == sockets.length) {
+                    async.each(sockets, function(socket, callback) {
+                        socket.executeCommand('cleanup', null, function(result) {
+                            callback();
+                        });
+                    }, function(err) {
 
-            socket.executeCommand('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: indexGreaterThanOrEqualTo}, function(words) {
-                build.push(words);
-                callback();
-            });
+                        var diff = moment() - start;
+                        console.log('FINISHED', moment(diff).format('mm:ss'));
+                        process.exit();
 
-        }, function(err) {
+                    });
+                }
 
-            var objectsMerged = {};
-            build.forEach(function(items) {
-                objectsMerged = extend(objectsMerged, items);
-            });
+            } else {
 
-            for (var i = indexGreaterThanOrEqualTo; i <= indexLessThanOrEqualTo; i++) {
-                if (objectsMerged[i]) console.log(objectsMerged[i]);
+                if (buildHelper[count] == null) buildHelper[count] = [];
+
+                buildHelper[count].push(data);
+
+                if (buildHelper[count].length == sockets.length) {
+                    var buildObj = [];
+                    buildHelper[count].forEach(function(obj) {
+                        for(var i in obj) {
+                            buildObj[i] = obj[i];
+                        }
+                    });
+                    buildObj.forEach(function(word) {
+                        console.log(word);
+                    });
+                    //delete buildHelper[count];
+                }
+
             }
 
-            callback();
-
         });
-    }, function(err) {
-        var diff = moment() - start;
-        console.log('FINISHED', moment(diff).format('mm:ss'));
-        process.exit();
-    });
-}*/
 
-var retrieveWords = function(previousLimit) {
+
+    });
+
+}
+
+var retrieveWordsOld = function(previousLimit) {
 
     var indexLessThanOrEqualTo = previousLimit + (CHUNK_SIZE * sockets.length);
 
