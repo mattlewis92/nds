@@ -31,7 +31,7 @@ var checkMemoryUsage = function() {
         words = {};
         filesWritten++;
 
-        fs.writeFile(dbPath + '/words' + filesWritten, 'module.exports=' + JSON.stringify(wordsBackup) + ';', function(err) {
+        fs.writeFile(dbPath + '/words' + filesWritten + '.json', JSON.stringify(wordsBackup), function(err) {
             if(err) {
                 console.log(err);
             } else {
@@ -63,9 +63,10 @@ server.registerCommand('removeDuplicates', function(data, callback) {
         var build = {};
         keys.forEach(function(key) {
             var word = obj[key];
-            if (!build[word]) {
+            var lineNumber = build[word];
+            if (!lineNumber) {
                 build[word] = key;
-            } else if(parseInt(build[word]) > parseInt(key)) {
+            } else if(parseInt(lineNumber) > parseInt(key)) {
                 build[word] = key;
             }
         });
@@ -91,15 +92,14 @@ server.registerCommand('removeDuplicates', function(data, callback) {
 
 });
 
-server.registerCommand('retrieveWords', function(data, callback) {
+var chunkObject = function(obj, chunkSize) {
 
-    var chunkSize = data.chunkSize;
     var maxId = Object.keys(result).pop();
 
     var chunks = new Array(Math.ceil(maxId / chunkSize));
     var chunksAdded = 0;
     var buildChunk = {};
-    for (var i in result) {
+    for (var i in obj) {
 
         var bottomThreshold = chunksAdded * chunkSize;
         var topThreshold = bottomThreshold + chunkSize;
@@ -113,37 +113,36 @@ server.registerCommand('retrieveWords', function(data, callback) {
             topThreshold = bottomThreshold + chunkSize;
         }
 
-        buildChunk[i] = result[i];
+        buildChunk[i] = obj[i];
     }
     chunks[chunksAdded] = buildChunk;
-    chunks.reverse();
 
-    if (chunks[chunks.length - 1] == null) chunks.pop();
+    return chunks;
+}
 
-    result = null;
+var chunkedResult = null;
 
-    var sendChunk = function() {
+server.registerCommand('retrieveWords', function(data, callback) {
 
-        var response = chunks.pop();
+    var chunkSize = data.indexLessThanOrEqualTo - data.indexGreaterThanOrEqualTo;
+    if (chunkedResult == null) {
+        chunkedResult = chunkObject(result, chunkSize);
+        result = {};
+    }
 
-        if (chunks.length > 0) {
-            server.writeToStream(response, sendChunk);
-        } else {
-            server.writeToStream(response);
-            server.writeToStream({endOfData: true});
-        }
+    var chunkIndexToSend = data.indexGreaterThanOrEqualTo / chunkSize;
 
-        response = null;
+    callback(chunkedResult[chunkIndexToSend]);
 
-    };
+    chunkedResult[chunkIndexToSend] = null;
 
-    sendChunk();
 });
 
 server.registerCommand('cleanup', function(data, callback) {
     memoryUsageGuess = 0;
     filesWritten = 0;
     words = {};
+    chunkedResult = null;
     result = {};
     callback();
 });

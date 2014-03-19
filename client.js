@@ -104,69 +104,11 @@ var emitRemoveDupes = function() {
     }, function(err) {
         //console.log('\n--RESULT--\n');
 
-        retrieveWords();
+        retrieveWords(0);
     });
 }
 
-var retrieveWords = function() {
-
-    var socketsEnded = 0;
-
-    var buildHelper = {};
-
-    sockets.forEach(function(socket) {
-
-        var count = 0;
-
-        socket.executeCommand('retrieveWords', {chunkSize: 2});
-        socket.streamResponse(function(data) {
-            count++;
-            if (data.endOfData) {
-                socketsEnded++;
-
-                if (socketsEnded == sockets.length) {
-                    async.each(sockets, function(socket, callback) {
-                        socket.executeCommand('cleanup', null, function(result) {
-                            callback();
-                        });
-                    }, function(err) {
-
-                        var diff = moment() - start;
-                        console.log('FINISHED', moment(diff).format('mm:ss'));
-                        process.exit();
-
-                    });
-                }
-
-            } else {
-
-                if (buildHelper[count] == null) buildHelper[count] = [];
-
-                buildHelper[count].push(data);
-
-                if (buildHelper[count].length == sockets.length) {
-                    var buildObj = [];
-                    buildHelper[count].forEach(function(obj) {
-                        for(var i in obj) {
-                            buildObj[i] = obj[i];
-                        }
-                    });
-                    buildObj.forEach(function(word) {
-                        console.log(word);
-                    });
-                    //delete buildHelper[count];
-                }
-
-            }
-
-        });
-
-
-    });
-
-}
-
-var retrieveWordsOld = function(previousLimit) {
+var retrieveWords = function(previousLimit) {
 
     var indexLessThanOrEqualTo = previousLimit + (CHUNK_SIZE * sockets.length);
 
