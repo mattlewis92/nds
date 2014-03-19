@@ -19,6 +19,8 @@ var memoryUsageGuess = 0;
 
 var words = {};
 
+var result = {};
+
 var filesWritten = 0;
 
 var checkMemoryUsage = function() {
@@ -52,8 +54,6 @@ server.registerCommand('storeWords', function(chunkOfWords, callback) {
     callback('saved');
 
 });
-
-var result = {};
 
 server.registerCommand('removeDuplicates', function(data, callback) {
 
@@ -101,4 +101,12 @@ server.registerCommand('retrieveWords', function(data, callback) {
     }
 
     callback(response);
+});
+
+server.registerCommand('cleanup', function(data, callback) {
+    memoryUsageGuess = 0;
+    filesWritten = 0;
+    words = {};
+    result = {};
+    callback();
 });

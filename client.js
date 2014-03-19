@@ -15,7 +15,7 @@ const CHUNK_SIZE = 30;
 
 var start = moment();
 
-async.forEach(hosts, function(host, callback) {
+async.each(hosts, function(host, callback) {
 
     var hostParts = host.split(':');
     var socket = new client(hostParts[0], hostParts[1], callback);
@@ -97,15 +97,59 @@ var emitRemoveDupes = function() {
     //console.log('TOOK', moment(diff).format('mm:ss'));
     //process.exit();
 
-    async.forEach(sockets, function(socket, callback) {
+    async.each(sockets, function(socket, callback) {
         socket.executeCommand('removeDuplicates', null, function() {
             callback();
         });
     }, function(err) {
         //console.log('\n--RESULT--\n');
+
         retrieveWords(0);
     });
 }
+
+/*var retrieveWords = function() {
+
+    var step = (CHUNK_SIZE * sockets.length);
+
+    var thresholds = [];
+
+    for (var j = 0; j < count ; j+= step) {
+        thresholds.push(j);
+    }
+
+    async.eachLimit(thresholds, 100, function(indexGreaterThanOrEqualTo, callback) {
+        var build = [];
+
+        var indexLessThanOrEqualTo = indexGreaterThanOrEqualTo + step;
+
+        async.each(sockets, function(socket, callback) {
+
+            socket.executeCommand('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: indexGreaterThanOrEqualTo}, function(words) {
+                build.push(words);
+                callback();
+            });
+
+        }, function(err) {
+
+            var objectsMerged = {};
+            build.forEach(function(items) {
+                objectsMerged = extend(objectsMerged, items);
+            });
+
+            for (var i = indexGreaterThanOrEqualTo; i <= indexLessThanOrEqualTo; i++) {
+                if (objectsMerged[i]) console.log(objectsMerged[i]);
+            }
+
+            callback();
+
+        });
+    }, function(err) {
+        var diff = moment() - start;
+        console.log('FINISHED', moment(diff).format('mm:ss'));
+        process.exit();
+    });
+}*/
 
 var retrieveWords = function(previousLimit) {
 
@@ -113,7 +157,7 @@ var retrieveWords = function(previousLimit) {
 
     var build = [];
 
-    async.forEach(sockets, function(socket, callback) {
+    async.each(sockets, function(socket, callback) {
 
         socket.executeCommand('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: previousLimit}, function(words) {
             build.push(words);
@@ -134,9 +178,19 @@ var retrieveWords = function(previousLimit) {
         if (indexLessThanOrEqualTo < count) {
             retrieveWords(indexLessThanOrEqualTo);
         } else {
-            var diff = moment() - start;
-            //console.log('FINISHED', moment(diff).format('mm:ss'));
-            process.exit();
+
+            async.each(sockets, function(socket, callback) {
+                socket.executeCommand('cleanup', null, function(result) {
+                    callback();
+                });
+            }, function(err) {
+
+                var diff = moment() - start;
+                console.log('FINISHED', moment(diff).format('mm:ss'));
+                process.exit();
+
+            });
+
         }
 
     });
