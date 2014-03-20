@@ -51,7 +51,7 @@ async.each(hosts, function(host, callback) {
 
         endOfInput = endOfInput || false;
 
-        if (Object.keys(chunks[index]).length >= CHUNK_SIZE || endOfInput) {
+        if (chunks[index] != null && Object.keys(chunks[index]).length >= CHUNK_SIZE || endOfInput) {
             var dataToSend = extend({}, chunks[index]);
             chunks[index] = {};
 
