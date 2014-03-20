@@ -13,7 +13,6 @@ if (fs.existsSync(dbPath)) {
 fs.mkdirSync(dbPath);
 
 var allowedMemorySize = os.totalmem() / 8;
-allowedMemorySize = 1000000;
 
 var memoryUsageGuess = 0;
 
@@ -62,11 +61,13 @@ server.registerCommand('removeDuplicates', function(data, callback) {
         keys.forEach(function(key) {
             var word = obj[key];
             var lineNumber = build[word];
-            if (!lineNumber) {
+            if (lineNumber == null) {
                 build[word] = key;
             } else if(parseInt(lineNumber) > parseInt(key)) {
                 build[word] = key;
             }
+
+
         });
 
         var keys = Object.keys(build);
@@ -108,7 +109,12 @@ server.registerCommand('removeDuplicates', function(data, callback) {
             for (var i = 1; i <= filesWritten; i++) {
                 var file1Name = dbPath + '/words' + i + '.json';
                 var file1 = JSON.parse(fs.readFileSync(file1Name));
-                var file1DupesRemoved = mapReduceFn(file1);
+
+                if (i == 1) {
+                    var file1DupesRemoved = mapReduceFn(file1);
+                } else {
+                    var file1DupesRemoved = extend({}, file1);
+                }
 
                 file1 = null;
                 fs.writeFileSync(file1Name, JSON.stringify(file1DupesRemoved));
@@ -120,6 +126,11 @@ server.registerCommand('removeDuplicates', function(data, callback) {
                 for (var j = i + 1; j <= filesWritten; j++) {
                     var file2Name = dbPath + '/words' + j + '.json';
                     var file2 = JSON.parse(fs.readFileSync(file2Name));
+
+                    if (i == 1) {
+                        file2 = mapReduceFn(file2);
+                    }
+
                     var file2Words = flipObject(file2);
                     file2 = null;
                     for (var k in file1Words) {
@@ -127,9 +138,12 @@ server.registerCommand('removeDuplicates', function(data, callback) {
                     }
                     var file2DupesRemoved = flipObject(file2Words);
                     file2Words = null;
+
                     fs.writeFileSync(file2Name, JSON.stringify(file2DupesRemoved));
                     file2DupesRemoved = null;
                 }
+
+                file1Words = null;
 
             }
 
@@ -144,16 +158,18 @@ server.registerCommand('removeDuplicates', function(data, callback) {
 var chunksAdded = 0;
 var chunkObject = function(obj, chunkSize) {
 
-    var objKeys = Object.keys(result);
+    var objKeys = Object.keys(obj).map(function(index) {
+        return parseInt(index);
+    });
+    objKeys.sort(function(a,b){return a-b});
 
     var chunks = new Array();
     var buildChunk = {};
-    for (var i in obj) {
-
+    objKeys.forEach(function(i) {
         var bottomThreshold = chunksAdded * chunkSize;
         var topThreshold = bottomThreshold + chunkSize;
 
-        while (parseInt(i) >= topThreshold) {
+        while (i >= topThreshold) {
             chunks[chunksAdded] = extend({}, buildChunk);
             buildChunk = {};
             chunksAdded++;
@@ -163,7 +179,7 @@ var chunkObject = function(obj, chunkSize) {
         }
 
         buildChunk[i] = obj[i];
-    }
+    });
     chunks[chunksAdded] = buildChunk;
 
     return chunks;
@@ -186,11 +202,11 @@ server.registerCommand('retrieveWords', function(data, callback) {
     } else {
 
         if (filesRead == 0) {
-            console.log('READING', filesRead+1);
+            //console.log('READING', filesRead+1);
             chunkedResult = chunkObject(JSON.parse(fs.readFileSync(dbPath + '/words' + (filesRead+1) + '.json')), chunkSize);
             filesRead++;
         } else if (chunksRead == (chunksAdded) && filesRead < filesWritten) {
-            console.log('READING', filesRead+1);
+            //console.log('READING', filesRead+1);
             var lastChunk = chunkedResult[chunkIndexToSend];
             chunkedResult = chunkObject(JSON.parse(fs.readFileSync(dbPath + '/words' + (filesRead+1) + '.json')), chunkSize);
             if (!chunkedResult[chunkIndexToSend]) chunkedResult[chunkIndexToSend] = {};
@@ -199,8 +215,6 @@ server.registerCommand('retrieveWords', function(data, callback) {
             }
             filesRead++;
         }
-
-        //console.log(chunksRead, chunksAdded);
 
     }
 
@@ -219,6 +233,7 @@ server.registerCommand('cleanup', function(data, callback) {
     result = {};
     chunksAdded = 0;
     chunksRead = 0;
+    filesRead = 0;
     if (fs.existsSync(dbPath)) {
         fs.rmrfSync(dbPath);
     }
