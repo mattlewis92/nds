@@ -6,10 +6,10 @@ var server = require('./lib/server')(os.hostname(), port);
 
 var dbPath = './data/' + port;
 
+//cleanup working directory
 if (fs.existsSync(dbPath)) {
     fs.rmrfSync(dbPath);
 }
-
 fs.mkdirSync(dbPath);
 
 var allowedMemorySize = os.totalmem() / 8;
@@ -22,6 +22,7 @@ var result = {};
 
 var filesWritten = 0;
 
+//If memory usage exceeds a limit, write the chunk of words to disk
 var checkMemoryUsage = function() {
 
     if (memoryUsageGuess > allowedMemorySize) {
@@ -39,6 +40,7 @@ var checkMemoryUsage = function() {
     }
 }
 
+//command to store words
 server.registerCommand('storeWords', function(chunkOfWords, callback) {
 
     words = extend(words, chunkOfWords);
@@ -53,8 +55,10 @@ server.registerCommand('storeWords', function(chunkOfWords, callback) {
 
 });
 
+//command to remove duplicates
 server.registerCommand('removeDuplicates', function(data, callback) {
 
+    //function to remove all duplicates from a given list
     var mapReduceFn = function(obj) {
         var keys = Object.keys(obj);
         var build = {};
@@ -79,6 +83,7 @@ server.registerCommand('removeDuplicates', function(data, callback) {
         return result;
     }
 
+    //flips an objects keys and values
     var flipObject = function(obj) {
         var build = {};
         for (var i in obj) {
@@ -87,6 +92,7 @@ server.registerCommand('removeDuplicates', function(data, callback) {
         return build;
     }
 
+    //If we can process all data in memory then let's do so.
     if (filesWritten == 0) {
 
         result = mapReduceFn(words);
@@ -110,6 +116,7 @@ server.registerCommand('removeDuplicates', function(data, callback) {
                 var file1Name = dbPath + '/words' + i + '.json';
                 var file1 = JSON.parse(fs.readFileSync(file1Name));
 
+                //on the first loop remove all duplicates from each list
                 if (i == 1) {
                     var file1DupesRemoved = mapReduceFn(file1);
                 } else {
@@ -123,10 +130,12 @@ server.registerCommand('removeDuplicates', function(data, callback) {
 
                 totalWords += Object.keys(file1Words).length;
 
+                //loop through every block of works after the current word block removing duplicates
                 for (var j = i + 1; j <= filesWritten; j++) {
                     var file2Name = dbPath + '/words' + j + '.json';
                     var file2 = JSON.parse(fs.readFileSync(file2Name));
 
+                    //on the first loop remove all duplicates from each list
                     if (i == 1) {
                         file2 = mapReduceFn(file2);
                     }
@@ -155,6 +164,8 @@ server.registerCommand('removeDuplicates', function(data, callback) {
 
 });
 
+//Pre chunks an object up, otherwise node hits performance problems when looking up by key in a loop
+//in order for this to work we assume the requested chunk size will always be the same
 var chunksAdded = 0;
 var chunkObject = function(obj, chunkSize) {
 
@@ -189,11 +200,13 @@ var chunkedResult = null;
 var filesRead = 0;
 var chunksRead = 0;
 
+//command to retrieve words in a given index range
 server.registerCommand('retrieveWords', function(data, callback) {
 
     var chunkSize = data.indexLessThanOrEqualTo - data.indexGreaterThanOrEqualTo;
     var chunkIndexToSend = data.indexGreaterThanOrEqualTo / chunkSize;
 
+    //if we've processed it all in memory
     if (filesWritten == 0) {
         if (chunkedResult == null) {
             chunkedResult = chunkObject(result, chunkSize);
@@ -225,6 +238,7 @@ server.registerCommand('retrieveWords', function(data, callback) {
 
 });
 
+//cleanup global variables, quite hacky but I ran out of time
 server.registerCommand('cleanup', function(data, callback) {
     memoryUsageGuess = 0;
     filesWritten = 0;

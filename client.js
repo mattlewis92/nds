@@ -5,6 +5,7 @@ var extend = require('util')._extend;
 var moment = require('moment');
 var client = require('./lib/client');
 
+//determine the hosts to use
 var hosts = fs.readFileSync('hosts.cfg').toString().trim().split('\n');
 
 var hostsToUse = parseInt(process.argv[2]);
@@ -23,6 +24,7 @@ const CHUNK_SIZE = 25;
 
 var start = moment();
 
+//initialize each socket
 async.each(hosts, function(host, callback) {
 
     var hostParts = host.split(':');
@@ -39,6 +41,7 @@ async.each(hosts, function(host, callback) {
         output: new require('stream').Writable()
     });
 
+    //function to determine which socket to write a word to based on its first character
     var getSocketIndexToSaveWordTo = function(input) {
         var firstChar = input.toLowerCase().charCodeAt(0) - 97;
         var socketIndex = firstChar % sockets.length;
@@ -47,6 +50,7 @@ async.each(hosts, function(host, callback) {
 
     var chunks = new Array(sockets.length);
 
+    //if the chunk size exceeds the defined limit then flush it out to the server node
     var chunkHandler = function(index, endOfInput) {
 
         endOfInput = endOfInput || false;
@@ -67,6 +71,7 @@ async.each(hosts, function(host, callback) {
 
     }
 
+    //simply function to handle input from the stdin
     rl.on('line', function (word) {
 
         if (word.length == 0) { //end of input
@@ -93,7 +98,7 @@ async.each(hosts, function(host, callback) {
 
 });
 
-
+//basic function to tell each node to remove duplicates
 var hasStartedRemovingDupes = false;
 var emitRemoveDupes = function() {
 	
@@ -116,12 +121,14 @@ var emitRemoveDupes = function() {
     });
 }
 
+//function to retrieve words
 var retrieveWords = function(previousLimit) {
 
     var indexLessThanOrEqualTo = previousLimit + (CHUNK_SIZE * sockets.length);
 
     var build = [];
 
+    //execute the command on each node
     async.each(sockets, function(socket, callback) {
 
         socket.executeCommand('retrieveWords', {indexLessThanOrEqualTo: indexLessThanOrEqualTo, indexGreaterThanOrEqualTo: previousLimit}, function(words) {
@@ -131,6 +138,7 @@ var retrieveWords = function(previousLimit) {
 
     }, function(err) {
 
+        //merge the results
         var objectsMerged = {};
         build.forEach(function(items) {
             objectsMerged = extend(objectsMerged, items);
@@ -140,10 +148,12 @@ var retrieveWords = function(previousLimit) {
             if (objectsMerged[i]) console.log(objectsMerged[i]);
         }
 
+        //continue with the next chunk if there is still data to get
         if (indexLessThanOrEqualTo < count) {
             retrieveWords(indexLessThanOrEqualTo);
         } else {
 
+            //otherwise tell each node to cleanup and exit the client
             async.each(sockets, function(socket, callback) {
                 socket.executeCommand('cleanup', null, function(result) {
                     callback();
