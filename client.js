@@ -13,6 +13,8 @@ if (hostsToUse > hosts.length) {
     process.exit();
 }
 
+hosts = hosts.slice(0, hostsToUse);
+
 var sockets = [];
 
 var count = 0;
