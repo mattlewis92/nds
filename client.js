@@ -5,13 +5,19 @@ var extend = require('util')._extend;
 var moment = require('moment');
 var client = require('./lib/client');
 
-var hosts = fs.readFileSync('hosts.cfg').toString().split('\n');
+var hosts = fs.readFileSync('hosts.cfg').toString().trim().split('\n');
+
+var hostsToUse = parseInt(process.argv[2]);
+if (hostsToUse > hosts.length) {
+    console.error('ERROR, number of hosts(' + hostsToUse + ') to use exceeds the number of available hosts (' + hosts.length + ')');
+    process.exit();
+}
 
 var sockets = [];
 
 var count = 0;
 
-const CHUNK_SIZE = 30;
+const CHUNK_SIZE = 25;
 
 var start = moment();
 
