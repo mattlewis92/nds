@@ -3,7 +3,7 @@ var os = require('os');
 var async = require('async');
 var fs = require('fs.extra');
 var extend = require('util')._extend;
-var server = require('./lib/server')('127.0.0.1', port);
+var server = require('./lib/server')(os.hostname(), port);
 
 var dbPath = './data/' + port;
 
